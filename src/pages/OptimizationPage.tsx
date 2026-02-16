@@ -1,8 +1,17 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import { getDailyTimeSeries } from '../lib/alphaVantage'
 import {
-  maxSharpeWeights,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
+import { supabase } from '../lib/supabase'
+import { getDailyTimeSeries, type TimeSeriesPoint } from '../lib/alphaVantage'
+import {
+  maxSharpeWeightsLongOnly,
   minVarianceWeights,
   portfolioSharpe,
 } from '../lib/markowitz'
@@ -30,6 +39,8 @@ export function OptimizationPage() {
     stdDev: number
     sharpeRatio: number
   } | null>(null)
+  const [evolutionData, setEvolutionData] = useState<{ date: string; value: number }[]>([])
+  const [historyPeriod, setHistoryPeriod] = useState<'1y' | '3y'>('3y')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -40,11 +51,12 @@ export function OptimizationPage() {
     if (assets.length < 2) {
       setAllocation([])
       setMetrics(null)
+      setEvolutionData([])
       setError(null)
       return
     }
     computeOptimal()
-  }, [assets, strategy])
+  }, [assets, strategy, historyPeriod])
 
   async function loadAssets() {
     setLoading(true)
@@ -112,20 +124,19 @@ export function OptimizationPage() {
     const covAnn = covDaily.map((row) => row.map((v) => v * 252))
     let weights: number[] | null = null
     if (strategy === 'maxSharpe') {
-      weights = maxSharpeWeights(meanRetsAnn, covAnn)
+      weights = maxSharpeWeightsLongOnly(meanRetsAnn, covAnn)
     } else {
       weights = minVarianceWeights(covAnn)
     }
-    if (!weights || weights.some((w) => w < -0.01)) {
-      setError('Optimisation impossible (poids négatifs). Essayez d’autres actifs.')
+    if (!weights) {
+      setError('Optimisation impossible. Essayez d’autres actifs.')
       setAllocation([])
       setMetrics(null)
+      setEvolutionData([])
       setComputing(false)
       return
     }
-    const cleanWeights = weights.map((w) => Math.max(0, w))
-    const sum = cleanWeights.reduce((a, b) => a + b, 0)
-    const normWeights = sum > 0 ? cleanWeights.map((w) => w / sum) : cleanWeights
+    const normWeights = weights
     const alloc = seriesList.map((s, i) => ({
       symbol: s.symbol,
       weight: normWeights[i],
@@ -145,7 +156,72 @@ export function OptimizationPage() {
       stdDev: stdDev * 100,
       sharpeRatio: sharpe,
     })
+
+    const evoData = await computeEvolution(
+      assets.filter((a) => seriesList.some((s) => s.symbol === a.symbol)),
+      seriesList,
+      normWeights,
+      historyPeriod
+    )
+    setEvolutionData(evoData)
     setComputing(false)
+  }
+
+  async function computeEvolution(
+    assetsList: PortfolioAsset[],
+    seriesList: { symbol: string; closes: number[] }[],
+    weights: number[],
+    period: '1y' | '3y'
+  ): Promise<{ date: string; value: number }[]> {
+    const symbols = seriesList.map((s) => s.symbol)
+    const seriesBySymbol: Record<string, TimeSeriesPoint[]> = {}
+    for (const a of assetsList) {
+      try {
+        const res = await getDailyTimeSeries(a.symbol, true)
+        if (res?.series?.length) seriesBySymbol[a.symbol] = res.series
+      } catch {
+        /* ignore */
+      }
+    }
+    const validSymbols = symbols.filter((s) => seriesBySymbol[s]?.length)
+    if (validSymbols.length < 2) return []
+
+    const cutOff = new Date()
+    if (period === '1y') cutOff.setFullYear(cutOff.getFullYear() - 1)
+    else cutOff.setFullYear(cutOff.getFullYear() - 3)
+    const cutOffStr = cutOff.toISOString().slice(0, 10)
+
+    const byDate: Record<string, Record<string, number>> = {}
+    for (const s of validSymbols) {
+      for (const p of seriesBySymbol[s]) {
+        if (p.date < cutOffStr) continue
+        if (!byDate[p.date]) byDate[p.date] = {}
+        byDate[p.date][s] = p.close
+      }
+    }
+    const commonDates = Object.keys(byDate).filter((d) =>
+      validSymbols.every((s) => byDate[d][s] != null)
+    ).sort()
+
+    if (commonDates.length < 2) return []
+    const firstDate = commonDates[0]
+    const idxMap = validSymbols.reduce((acc, s) => {
+      acc[s] = seriesList.findIndex((x) => x.symbol === s)
+      return acc
+    }, {} as Record<string, number>)
+    const firstPrices: Record<string, number> = {}
+    for (const s of validSymbols) firstPrices[s] = byDate[firstDate][s]
+
+    const result = commonDates.map((date) => {
+      let cumulativeReturn = 0
+      for (const s of validSymbols) {
+        const idx = idxMap[s]
+        if (idx < 0 || idx >= weights.length) continue
+        cumulativeReturn += weights[idx] * (byDate[date][s] / firstPrices[s])
+      }
+      return { date, value: cumulativeReturn }
+    })
+    return result
   }
 
   const totalAmount = parseFloat(amount.replace(/\s/g, '')) || 0
@@ -182,6 +258,34 @@ export function OptimizationPage() {
                   className="px-4 py-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white placeholder-neutral-500 w-40 focus:outline-none focus:ring-2 focus:ring-neutral-500"
                 />
                 <span className="text-neutral-400">€</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-6 mb-6">
+              <h3 className="text-sm font-medium text-neutral-300 mb-4">
+                Période historique (évolution)
+              </h3>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="historyPeriod"
+                    checked={historyPeriod === '1y'}
+                    onChange={() => setHistoryPeriod('1y')}
+                    className="accent-white"
+                  />
+                  <span className="text-white">1 an</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="historyPeriod"
+                    checked={historyPeriod === '3y'}
+                    onChange={() => setHistoryPeriod('3y')}
+                    className="accent-white"
+                  />
+                  <span className="text-white">3 ans</span>
+                </label>
               </div>
             </div>
 
@@ -284,6 +388,86 @@ export function OptimizationPage() {
                       {metrics.sharpeRatio.toFixed(2)}
                     </div>
                   </div>
+                </div>
+
+                {evolutionData.length > 0 && (
+                  <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-6 mb-6">
+                    <h3 className="text-sm font-medium text-neutral-300 mb-4">
+                      Évolution du portfolio ({historyPeriod === '1y' ? '1 an' : '3 ans'})
+                    </h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={evolutionData.map((d) => ({
+                            ...d,
+                            value: d.value * totalAmount,
+                          }))}
+                          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#404040" />
+                          <XAxis
+                            dataKey="date"
+                            stroke="#737373"
+                            tick={{ fill: '#737373', fontSize: 11 }}
+                            tickFormatter={(v: string) => v.slice(0, 10)}
+                          />
+                          <YAxis
+                            stroke="#737373"
+                            tick={{ fill: '#737373', fontSize: 11 }}
+                            tickFormatter={(v: number) =>
+                              (v / 1000).toFixed(0) + 'k'
+                            }
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#171717',
+                              border: '1px solid #404040',
+                            }}
+                            formatter={(value: number | undefined) =>
+                              [
+                                (value != null
+                                  ? value.toLocaleString('fr-FR', {
+                                      minimumFractionDigits: 0,
+                                      maximumFractionDigits: 0,
+                                    })
+                                  : '—') + ' €',
+                                'Valeur',
+                              ]
+                            }
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#fafafa"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-6">
+                  <h3 className="text-sm font-medium text-neutral-300 mb-2">
+                    Projection 1 an
+                  </h3>
+                  <p className="text-neutral-400 text-sm mb-2">
+                    Avec un rendement attendu de {metrics.expectedReturn.toFixed(1)}% :
+                  </p>
+                  <p className="text-2xl font-semibold text-white">
+                    {(
+                      totalAmount *
+                      (1 + metrics.expectedReturn / 100)
+                    ).toLocaleString('fr-FR', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    })}{' '}
+                    €
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    (estimation, non garantie)
+                  </p>
                 </div>
               </>
             )}

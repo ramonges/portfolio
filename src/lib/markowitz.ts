@@ -58,7 +58,7 @@ export function minVarianceWeights(cov: number[][]): number[] | null {
   return w.map((x) => x / sum)
 }
 
-/** Maximum Sharpe ratio portfolio (tangency portfolio) weights */
+/** Maximum Sharpe ratio portfolio (tangency portfolio) — peut avoir des poids négatifs */
 export function maxSharpeWeights(
   meanRets: number[],
   cov: number[][],
@@ -73,6 +73,20 @@ export function maxSharpeWeights(
   const sum = w.reduce((a, b) => a + b, 0)
   if (Math.abs(sum) < 1e-12) return null
   return w.map((x) => x / sum)
+}
+
+/** Max Sharpe long-only : ramène les poids négatifs à 0 puis renormalise */
+export function maxSharpeWeightsLongOnly(
+  meanRets: number[],
+  cov: number[][],
+  riskFree = 0.04
+): number[] | null {
+  let w = maxSharpeWeights(meanRets, cov, riskFree)
+  if (!w) return null
+  const clipped = w.map((x) => Math.max(0, x))
+  const sum = clipped.reduce((a, b) => a + b, 0)
+  if (sum < 1e-12) return minVarianceWeights(cov)
+  return clipped.map((x) => x / sum)
 }
 
 function matVec(M: number[][], v: number[]): number[] {

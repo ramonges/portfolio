@@ -59,11 +59,14 @@ export interface TimeSeriesResponse {
   series: TimeSeriesPoint[]
 }
 
-export async function getDailyTimeSeries(symbol: string): Promise<TimeSeriesResponse | null> {
+export async function getDailyTimeSeries(
+  symbol: string,
+  fullHistory = false
+): Promise<TimeSeriesResponse | null> {
   const data = await fetchApi({
     function: 'TIME_SERIES_DAILY',
     symbol,
-    outputsize: 'compact',
+    outputsize: fullHistory ? 'full' : 'compact',
   }) as Record<string, unknown>
 
   const metaKey = Object.keys(data).find(k => k.startsWith('Meta'))
