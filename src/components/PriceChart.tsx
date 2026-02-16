@@ -46,7 +46,7 @@ export function PriceChart({ data, symbol, loading }: PriceChartProps) {
             dataKey="date"
             stroke="#94a3b8"
             tick={{ fill: '#94a3b8', fontSize: 12 }}
-            tickFormatter={(v) => v.slice(0, 10)}
+            tickFormatter={(v: string | number) => String(v).slice(0, 10)}
           />
           <YAxis
             stroke="#94a3b8"
@@ -57,7 +57,6 @@ export function PriceChart({ data, symbol, loading }: PriceChartProps) {
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
             labelStyle={{ color: '#e2e8f0' }}
             formatter={(value: number | undefined) => [value != null ? value.toFixed(2) : '—', 'Close']}
-            labelFormatter={(label) => label}
           />
           <Line
             type="monotone"

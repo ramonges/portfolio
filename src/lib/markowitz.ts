@@ -1,6 +1,6 @@
 /**
- * Simplified Markowitz / Efficient Frontier calculations
- * Given series of closes per asset, compute expected returns, cov matrix, and efficient frontier points
+ * Markowitz / Efficient Frontier calculations
+ * Mean-variance optimization: efficient frontier = min variance for each target return
  */
 
 export interface PortfolioPoint {
@@ -23,25 +23,68 @@ export function computeEfficientFrontier(
   const meanRets = returns.map((r) => r.reduce((a, b) => a + b, 0) / r.length)
   const cov = covMatrix(returns)
 
+  const minRet = Math.min(...meanRets)
+  const maxRet = Math.max(...meanRets)
+  const low = minRet
+  const high = maxRet
+
   const frontier: PortfolioPoint[] = []
   for (let i = 0; i <= nPoints; i++) {
-    const targetRet = i / nPoints
+    const targetRet = low + (high - low) * (i / nPoints)
     const weights = optimizeWeights(meanRets, cov, targetRet)
     if (!weights) continue
     const portRet = meanRets.reduce((s, m, j) => s + m * weights[j], 0)
     const portVar = weights.reduce(
       (s, wi, i) =>
-        s +
-        weights.reduce((s2, wj, j) => s2 + wi * wj * cov[i][j], 0),
+        s + weights.reduce((s2, wj, j) => s2 + wi * wj * cov[i][j], 0),
       0
     )
-    frontier.push({
-      return: portRet,
-      risk: Math.sqrt(Math.max(0, portVar)),
-      weights,
-    })
+    const risk = Math.sqrt(Math.max(0, portVar))
+    frontier.push({ return: portRet, risk, weights })
   }
   return frontier.sort((a, b) => a.risk - b.risk)
+}
+
+/** Maximum Sharpe ratio portfolio (tangency portfolio) weights */
+export function maxSharpeWeights(
+  meanRets: number[],
+  cov: number[][],
+  riskFree = 0.04
+): number[] | null {
+  const n = meanRets.length
+  if (n === 0) return null
+  const excess = meanRets.map((r) => r - riskFree)
+  const covInv = invertMatrix(cov)
+  if (!covInv) return null
+  const w = matVec(covInv, excess)
+  const sum = w.reduce((a, b) => a + b, 0)
+  if (Math.abs(sum) < 1e-12) return null
+  return w.map((x) => x / sum)
+}
+
+function matVec(M: number[][], v: number[]): number[] {
+  return M.map((row) => row.reduce((s, m, j) => s + m * v[j], 0))
+}
+
+function invertMatrix(M: number[][]): number[][] | null {
+  const n = M.length
+  const aug = M.map((row, i) => [...row, ...Array(n).fill(0).map((_, j) => (i === j ? 1 : 0))])
+  for (let col = 0; col < n; col++) {
+    let pivot = col
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(aug[row][col]) > Math.abs(aug[pivot][col])) pivot = row
+    }
+    ;[aug[col], aug[pivot]] = [aug[pivot], aug[col]]
+    if (Math.abs(aug[col][col]) < 1e-12) return null
+    const div = aug[col][col]
+    for (let j = 0; j < 2 * n; j++) aug[col][j] /= div
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue
+      const f = aug[row][col]
+      for (let j = 0; j < 2 * n; j++) aug[row][j] -= f * aug[col][j]
+    }
+  }
+  return aug.map((row) => row.slice(n))
 }
 
 function covMatrix(returns: number[][]): number[][] {

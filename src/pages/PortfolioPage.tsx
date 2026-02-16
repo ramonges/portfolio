@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase'
 import { getDailyTimeSeries } from '../lib/alphaVantage'
 import {
   computeEfficientFrontier,
+  maxSharpeWeights,
   portfolioSharpe,
   type PortfolioPoint,
 } from '../lib/markowitz'
@@ -28,9 +29,11 @@ interface PortfolioAsset {
 export function PortfolioPage() {
   const [assets, setAssets] = useState<PortfolioAsset[]>([])
   const [loading, setLoading] = useState(true)
+  const [frontierLoading, setFrontierLoading] = useState(false)
   const [frontier, setFrontier] = useState<PortfolioPoint[]>([])
   const [portfolioPoint, setPortfolioPoint] = useState<{ return: number; risk: number } | null>(null)
   const [portfolioSharpeRatio, setPortfolioSharpeRatio] = useState<number | null>(null)
+  const [optimalPoint, setOptimalPoint] = useState<{ return: number; risk: number } | null>(null)
 
   useEffect(() => {
     loadAssets()
@@ -41,10 +44,20 @@ export function PortfolioPage() {
       setFrontier([])
       setPortfolioPoint(null)
       setPortfolioSharpeRatio(null)
+      setOptimalPoint(null)
       return
     }
     loadFrontierAndPortfolio()
   }, [assets])
+
+  async function removeAsset(id: string) {
+    const { error } = await supabase.from('portfolio_assets').delete().eq('id', id)
+    if (error) {
+      console.error(error)
+      return
+    }
+    setAssets((prev) => prev.filter((a) => a.id !== id))
+  }
 
   async function loadAssets() {
     setLoading(true)
@@ -62,6 +75,7 @@ export function PortfolioPage() {
   }
 
   async function loadFrontierAndPortfolio() {
+    setFrontierLoading(true)
     const seriesList: { symbol: string; closes: number[] }[] = []
     for (const a of assets) {
       try {
@@ -77,13 +91,14 @@ export function PortfolioPage() {
       }
     }
 
-    if (seriesList.length < 2) {
+    if (seriesList.length === 0) {
       setFrontier([])
       setPortfolioPoint(null)
       setPortfolioSharpeRatio(null)
+      setOptimalPoint(null)
+      setFrontierLoading(false)
       return
     }
-
     const minLen = Math.min(...seriesList.map((s) => s.closes.length))
     const returns = seriesList.map((s) => {
       const c = s.closes.slice(-minLen)
@@ -92,41 +107,78 @@ export function PortfolioPage() {
       return rets
     })
 
-    const frontierPts = computeEfficientFrontier(returns.map((r) => r.map((x) => x * 252)), 40)
-    setFrontier(
-      frontierPts.map((p) => ({
-        ...p,
-        return: p.return * 100,
-        risk: p.risk * 100,
-      }))
-    )
+    const meanRetsAnn = returns.map((r) => (r.reduce((a, b) => a + b, 0) / r.length) * 252)
+    const covDaily = buildCovMatrix(returns)
+    const covAnn = covDaily.map((row) => row.map((v) => v * 252))
 
-    const weights = assets.slice(0, seriesList.length).map((a) => (a.weight || 1) / assets.length)
-    const meanRets = returns.map((r) => r.reduce((a, b) => a + b, 0) / r.length)
-    const cov: number[][] = []
-    for (let i = 0; i < returns.length; i++) {
-      cov[i] = []
-      for (let j = 0; j < returns.length; j++) {
-        const meanI = meanRets[i]
-        const meanJ = meanRets[j]
-        let s = 0
-        for (let t = 0; t < returns[0].length; t++) {
-          s += (returns[i][t] - meanI) * (returns[j][t] - meanJ)
-        }
-        cov[i][j] = s / (returns[0].length - 1)
-      }
-    }
-    const portRet = meanRets.reduce((s, m, j) => s + m * weights[j], 0) * 252
-    const portVar = weights.reduce(
+    const weights = assets.slice(0, seriesList.length).map((a) => (a.weight ?? 1) / seriesList.length)
+    const sumW = weights.reduce((a, b) => a + b, 0)
+    const normWeights = sumW > 0 ? weights.map((w) => w / sumW) : weights
+
+    const portRet = meanRetsAnn.reduce((s, m, j) => s + m * normWeights[j], 0)
+    const portVar = normWeights.reduce(
       (s, wi, i) =>
-        s + weights.reduce((s2, wj, j) => s2 + wi * wj * cov[i][j], 0),
+        s + normWeights.reduce((s2, wj, j) => s2 + wi * wj * covAnn[i][j], 0),
       0
-    ) * 252
+    )
     setPortfolioPoint({
       return: portRet * 100,
       risk: Math.sqrt(Math.max(0, portVar)) * 100,
     })
-    setPortfolioSharpeRatio(portfolioSharpe(weights, meanRets.map((r) => r * 252), cov.map((row) => row.map((v) => v * 252))))
+    setPortfolioSharpeRatio(
+      portfolioSharpe(normWeights, meanRetsAnn, covAnn)
+    )
+
+    if (seriesList.length === 1) {
+      setFrontier([{ return: portRet * 100, risk: Math.sqrt(Math.max(0, portVar)) * 100 }])
+      setOptimalPoint(null)
+    } else {
+      const frontierPts = computeEfficientFrontier(
+        returns.map((r) => r.map((x) => x * 252)),
+        50
+      )
+      setFrontier(
+        frontierPts.map((p) => ({
+          ...p,
+          return: p.return * 100,
+          risk: p.risk * 100,
+        }))
+      )
+      const optW = maxSharpeWeights(meanRetsAnn, covAnn)
+      if (optW) {
+        const optRet = meanRetsAnn.reduce((s, m, j) => s + m * optW[j], 0)
+        const optVar = optW.reduce(
+          (s, wi, i) => s + optW.reduce((s2, wj, j) => s2 + wi * wj * covAnn[i][j], 0),
+          0
+        )
+        setOptimalPoint({
+          return: optRet * 100,
+          risk: Math.sqrt(Math.max(0, optVar)) * 100,
+        })
+      } else {
+        setOptimalPoint(null)
+      }
+    }
+    setFrontierLoading(false)
+  }
+
+  function buildCovMatrix(returns: number[][]): number[][] {
+    const n = returns.length
+    const T = returns[0]?.length ?? 0
+    const cov: number[][] = []
+    for (let i = 0; i < n; i++) {
+      cov[i] = []
+      for (let j = 0; j < n; j++) {
+        const meanI = returns[i].reduce((a, b) => a + b, 0) / T
+        const meanJ = returns[j].reduce((a, b) => a + b, 0) / T
+        let s = 0
+        for (let t = 0; t < T; t++) {
+          s += (returns[i][t] - meanI) * (returns[j][t] - meanJ)
+        }
+        cov[i][j] = T > 1 ? s / (T - 1) : 0
+      }
+    }
+    return cov
   }
 
   const chartData = frontier.map((p) => ({ risk: p.risk, return: p.return }))
@@ -150,9 +202,16 @@ export function PortfolioPage() {
                 {assets.map((a) => (
                   <span
                     key={a.id}
-                    className="px-3 py-1 rounded-lg bg-slate-700 text-slate-200 text-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 text-sm"
                   >
                     {a.symbol} ({a.type})
+                    <button
+                      onClick={() => removeAsset(a.id)}
+                      className="text-slate-400 hover:text-rose-400 text-xs"
+                      aria-label={`Remove ${a.symbol}`}
+                    >
+                      ×
+                    </button>
                   </span>
                 ))}
               </div>
@@ -183,6 +242,11 @@ export function PortfolioPage() {
               <h3 className="text-sm font-medium text-slate-300 mb-4">
                 Efficient Frontier & Portfolio
               </h3>
+              {frontierLoading ? (
+                <div className="h-96 flex items-center justify-center text-slate-400">
+                  Computing efficient frontier...
+                </div>
+              ) : (
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -220,14 +284,27 @@ export function PortfolioPage() {
                         r={8}
                         fill="#f59e0b"
                         stroke="#fff"
+                        label="You"
+                      />
+                    )}
+                    {optimalPoint && (
+                      <ReferenceDot
+                        x={optimalPoint.risk}
+                        y={optimalPoint.return}
+                        r={6}
+                        fill="#8b5cf6"
+                        stroke="#fff"
+                        label="Optimal"
                       />
                     )}
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex gap-4 mt-2 text-xs text-slate-400">
+              )}
+              <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-400">
                 <span>🟢 Efficient frontier</span>
                 <span>🟡 Your portfolio</span>
+                {optimalPoint && <span>🟣 Max Sharpe (optimal)</span>}
               </div>
             </div>
           </>

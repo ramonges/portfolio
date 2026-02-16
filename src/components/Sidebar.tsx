@@ -20,7 +20,7 @@ export function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) =>
+            className={({ isActive }: { isActive: boolean }) =>
               `w-10 h-10 flex items-center justify-center rounded-lg text-xl transition-colors ${
                 isActive ? 'bg-emerald-600 text-white' : 'hover:bg-slate-700 text-slate-300'
               }`
@@ -36,7 +36,7 @@ export function Sidebar() {
             <NavLink
               key={item.path}
               to={item.path}
-              className={({ isActive }) =>
+              className={({ isActive }: { isActive: boolean }) =>
                 `px-4 py-2 text-sm font-medium transition-colors ${
                   isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-300 hover:bg-slate-700/50'
                 }`
