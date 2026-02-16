@@ -34,6 +34,7 @@ export function PortfolioPage() {
   const [portfolioPoint, setPortfolioPoint] = useState<{ return: number; risk: number } | null>(null)
   const [portfolioSharpeRatio, setPortfolioSharpeRatio] = useState<number | null>(null)
   const [optimalPoint, setOptimalPoint] = useState<{ return: number; risk: number } | null>(null)
+  const [frontierProximity, setFrontierProximity] = useState<number | null>(null)
 
   useEffect(() => {
     loadAssets()
@@ -132,16 +133,16 @@ export function PortfolioPage() {
     if (seriesList.length === 1) {
       setFrontier([{ return: portRet * 100, risk: Math.sqrt(Math.max(0, portVar)) * 100 }])
       setOptimalPoint(null)
+      setFrontierProximity(100)
     } else {
-      const frontierPts = computeEfficientFrontier(
-        returns.map((r) => r.map((x) => x * 252)),
-        50
-      )
+      const frontierPts = computeEfficientFrontier(returns, 50)
+      const annRet = 252
+      const annRisk = Math.sqrt(252)
       setFrontier(
         frontierPts.map((p) => ({
           ...p,
-          return: p.return * 100,
-          risk: p.risk * 100,
+          return: p.return * annRet * 100,
+          risk: p.risk * annRisk * 100,
         }))
       )
       const optW = maxSharpeWeights(meanRetsAnn, covAnn)
@@ -155,8 +156,14 @@ export function PortfolioPage() {
           return: optRet * 100,
           risk: Math.sqrt(Math.max(0, optVar)) * 100,
         })
+        const optSharpe = portfolioSharpe(optW, meanRetsAnn, covAnn)
+        const userSharpe = portfolioSharpe(normWeights, meanRetsAnn, covAnn)
+        setFrontierProximity(
+          optSharpe > 0 ? Math.min(100, Math.round((userSharpe / optSharpe) * 100)) : null
+        )
       } else {
         setOptimalPoint(null)
+        setFrontierProximity(null)
       }
     }
     setFrontierLoading(false)
@@ -236,6 +243,15 @@ export function PortfolioPage() {
                   {portfolioPoint ? `${portfolioPoint.risk.toFixed(2)}%` : '—'}
                 </div>
               </div>
+              <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-4">
+                <div className="text-xs text-neutral-500">Proximité frontière</div>
+                <div className="text-xl font-semibold text-white">
+                  {frontierProximity != null ? `${frontierProximity}%` : '—'}
+                </div>
+                <div className="text-xs text-neutral-500 mt-0.5">
+                  (Sharpe vs optimal)
+                </div>
+              </div>
             </div>
 
             <div className="rounded-lg bg-neutral-900/50 border border-neutral-800 p-6">
@@ -281,20 +297,22 @@ export function PortfolioPage() {
                       <ReferenceDot
                         x={portfolioPoint.risk}
                         y={portfolioPoint.return}
-                        r={8}
-                        fill="#fafafa"
-                        stroke="#404040"
-                        label="You"
+                        r={10}
+                        fill="#fff"
+                        stroke="#000"
+                        strokeWidth={2}
+                        label={{ value: 'You', position: 'top' }}
                       />
                     )}
                     {optimalPoint && (
                       <ReferenceDot
                         x={optimalPoint.risk}
                         y={optimalPoint.return}
-                        r={6}
-                        fill="#a3a3a3"
-                        stroke="#404040"
-                        label="Optimal"
+                        r={8}
+                        fill="#888"
+                        stroke="#fff"
+                        strokeWidth={1}
+                        label={{ value: 'Optimal', position: 'top' }}
                       />
                     )}
                   </ComposedChart>

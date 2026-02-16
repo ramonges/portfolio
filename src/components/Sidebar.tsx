@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { HiOutlineSearch, HiOutlineBriefcase, HiOutlineChartBar } from 'react-icons/hi'
 
 const navItems = [
-  { path: '/', icon: '📊', label: 'Search & Add' },
-  { path: '/portfolio', icon: '💼', label: 'Portfolio' },
-  { path: '/optimization', icon: '⚖️', label: 'Portfolio Optimization' },
+  { path: '/', Icon: HiOutlineSearch, label: 'Search & Add' },
+  { path: '/portfolio', Icon: HiOutlineBriefcase, label: 'Portfolio' },
+  { path: '/optimization', Icon: HiOutlineChartBar, label: 'Portfolio Optimization' },
 ]
 
 export function Sidebar() {
@@ -22,12 +23,12 @@ export function Sidebar() {
             key={item.path}
             to={item.path}
             className={({ isActive }: { isActive: boolean }) =>
-              `w-10 h-10 flex items-center justify-center rounded-lg text-xl transition-colors ${
+              `w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
                 isActive ? 'bg-white text-black' : 'hover:bg-neutral-800 text-neutral-400'
               }`
             }
           >
-            {item.icon}
+            <item.Icon className="w-5 h-5" />
           </NavLink>
         ))}
       </div>
