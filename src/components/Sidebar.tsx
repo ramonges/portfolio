@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom'
 const navItems = [
   { path: '/', icon: '📊', label: 'Search & Add' },
   { path: '/portfolio', icon: '💼', label: 'Portfolio' },
+  { path: '/optimization', icon: '⚖️', label: 'Portfolio Optimization' },
 ]
 
 export function Sidebar() {

@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS portfolio_assets (
   UNIQUE(symbol)
 );
 
--- Store cached time series for quicker load (optional, can refresh from API)
+-- Enable RLS and allow anon access (personal use)
+ALTER TABLE portfolio_assets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON portfolio_assets;
+CREATE POLICY "Allow all for anon" ON portfolio_assets
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- Store cached time series for quicker load (optional)
 CREATE TABLE IF NOT EXISTS asset_data_cache (
   symbol TEXT PRIMARY KEY,
   series JSONB,

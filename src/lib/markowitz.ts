@@ -45,6 +45,19 @@ export function computeEfficientFrontier(
   return frontier.sort((a, b) => a.risk - b.risk)
 }
 
+/** Minimum variance portfolio weights (lowest standard deviation) */
+export function minVarianceWeights(cov: number[][]): number[] | null {
+  const n = cov.length
+  if (n === 0) return null
+  const ones = Array(n).fill(1)
+  const covInv = invertMatrix(cov)
+  if (!covInv) return null
+  const w = matVec(covInv, ones)
+  const sum = w.reduce((a, b) => a + b, 0)
+  if (Math.abs(sum) < 1e-12) return null
+  return w.map((x) => x / sum)
+}
+
 /** Maximum Sharpe ratio portfolio (tangency portfolio) weights */
 export function maxSharpeWeights(
   meanRets: number[],

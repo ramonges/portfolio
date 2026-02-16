@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
 import { SearchPage } from './pages/SearchPage'
 import { PortfolioPage } from './pages/PortfolioPage'
+import { OptimizationPage } from './pages/OptimizationPage'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Routes>
             <Route path="/" element={<SearchPage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/optimization" element={<OptimizationPage />} />
           </Routes>
         </main>
       </div>
