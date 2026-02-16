@@ -15,14 +15,14 @@ export function Sidebar() {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="w-14 h-full bg-slate-800/90 border-r border-slate-700 flex flex-col items-center py-6 gap-4">
+      <div className="w-14 h-full bg-neutral-900 border-r border-neutral-800 flex flex-col items-center py-6 gap-4">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }: { isActive: boolean }) =>
               `w-10 h-10 flex items-center justify-center rounded-lg text-xl transition-colors ${
-                isActive ? 'bg-emerald-600 text-white' : 'hover:bg-slate-700 text-slate-300'
+                isActive ? 'bg-white text-black' : 'hover:bg-neutral-800 text-neutral-400'
               }`
             }
           >
@@ -31,14 +31,14 @@ export function Sidebar() {
         ))}
       </div>
       {hovered && (
-        <div className="w-48 bg-slate-800/95 border-r border-slate-700 py-6 flex flex-col gap-1 animate-in fade-in duration-150">
+        <div className="w-48 bg-neutral-900 border-r border-neutral-800 py-6 flex flex-col gap-1">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               className={({ isActive }: { isActive: boolean }) =>
                 `px-4 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-300 hover:bg-slate-700/50'
+                  isActive ? 'text-white bg-neutral-800' : 'text-neutral-400 hover:bg-neutral-800/50'
                 }`
               }
             >

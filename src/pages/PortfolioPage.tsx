@@ -186,28 +186,28 @@ export function PortfolioPage() {
   return (
     <div className="pl-14 min-h-screen">
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <h2 className="text-xl font-semibold text-slate-200 mb-6">Portfolio Overview</h2>
+        <h2 className="text-xl font-semibold text-white mb-6">Portfolio Overview</h2>
 
         {loading ? (
-          <p className="text-slate-400">Loading...</p>
+          <p className="text-neutral-500">Loading...</p>
         ) : assets.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-neutral-500">
             No assets. Add stocks/ETFs from the Search & Add dashboard.
           </p>
         ) : (
           <>
-            <div className="mb-6 rounded-xl bg-slate-800/50 border border-slate-700 p-4">
-              <h3 className="text-sm font-medium text-slate-300 mb-3">Assets</h3>
+            <div className="mb-6 rounded-lg bg-neutral-900/50 border border-neutral-800 p-4">
+              <h3 className="text-sm font-medium text-neutral-300 mb-3">Assets</h3>
               <div className="flex flex-wrap gap-2">
                 {assets.map((a) => (
                   <span
                     key={a.id}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 text-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 text-white text-sm"
                   >
                     {a.symbol} ({a.type})
                     <button
                       onClick={() => removeAsset(a.id)}
-                      className="text-slate-400 hover:text-rose-400 text-xs"
+                      className="text-neutral-400 hover:text-white text-xs"
                       aria-label={`Remove ${a.symbol}`}
                     >
                       ×
@@ -218,61 +218,61 @@ export function PortfolioPage() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-4">
-                <div className="text-xs text-slate-500">Portfolio Sharpe Ratio</div>
-                <div className="text-xl font-semibold text-emerald-400">
+              <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-4">
+                <div className="text-xs text-neutral-500">Portfolio Sharpe Ratio</div>
+                <div className="text-xl font-semibold text-white">
                   {portfolioSharpeRatio != null ? portfolioSharpeRatio.toFixed(2) : '—'}
                 </div>
               </div>
-              <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-4">
-                <div className="text-xs text-slate-500">Expected Return (Ann.)</div>
-                <div className="text-xl font-semibold text-slate-200">
+              <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-4">
+                <div className="text-xs text-neutral-500">Expected Return (Ann.)</div>
+                <div className="text-xl font-semibold text-white">
                   {portfolioPoint ? `${portfolioPoint.return.toFixed(2)}%` : '—'}
                 </div>
               </div>
-              <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-4">
-                <div className="text-xs text-slate-500">Portfolio Risk (Ann.)</div>
-                <div className="text-xl font-semibold text-slate-200">
+              <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-4">
+                <div className="text-xs text-neutral-500">Portfolio Risk (Ann.)</div>
+                <div className="text-xl font-semibold text-white">
                   {portfolioPoint ? `${portfolioPoint.risk.toFixed(2)}%` : '—'}
                 </div>
               </div>
             </div>
 
-            <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">
-              <h3 className="text-sm font-medium text-slate-300 mb-4">
+            <div className="rounded-lg bg-neutral-900/50 border border-neutral-800 p-6">
+              <h3 className="text-sm font-medium text-neutral-300 mb-4">
                 Efficient Frontier & Portfolio
               </h3>
               {frontierLoading ? (
-                <div className="h-96 flex items-center justify-center text-slate-400">
+                <div className="h-96 flex items-center justify-center text-neutral-500">
                   Computing efficient frontier...
                 </div>
               ) : (
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#404040" />
                     <XAxis
                       dataKey="risk"
                       name="Risk %"
-                      stroke="#94a3b8"
-                      tick={{ fill: '#94a3b8' }}
+                      stroke="#737373"
+                      tick={{ fill: '#737373' }}
                       unit="%"
                     />
                     <YAxis
                       dataKey="return"
                       name="Return %"
-                      stroke="#94a3b8"
-                      tick={{ fill: '#94a3b8' }}
+                      stroke="#737373"
+                      tick={{ fill: '#737373' }}
                       unit="%"
                     />
                     <Tooltip
-                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                      contentStyle={{ backgroundColor: '#171717', border: '1px solid #404040' }}
                       formatter={(value: number | undefined) => (value != null ? value.toFixed(2) : '—')}
                     />
                     <Line
                       type="monotone"
                       dataKey="return"
-                      stroke="#10b981"
+                      stroke="#fafafa"
                       strokeWidth={2}
                       dot={false}
                       name="Efficient frontier"
@@ -282,8 +282,8 @@ export function PortfolioPage() {
                         x={portfolioPoint.risk}
                         y={portfolioPoint.return}
                         r={8}
-                        fill="#f59e0b"
-                        stroke="#fff"
+                        fill="#fafafa"
+                        stroke="#404040"
                         label="You"
                       />
                     )}
@@ -292,8 +292,8 @@ export function PortfolioPage() {
                         x={optimalPoint.risk}
                         y={optimalPoint.return}
                         r={6}
-                        fill="#8b5cf6"
-                        stroke="#fff"
+                        fill="#a3a3a3"
+                        stroke="#404040"
                         label="Optimal"
                       />
                     )}
@@ -301,10 +301,10 @@ export function PortfolioPage() {
                 </ResponsiveContainer>
               </div>
               )}
-              <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-400">
-                <span>🟢 Efficient frontier</span>
-                <span>🟡 Your portfolio</span>
-                {optimalPoint && <span>🟣 Max Sharpe (optimal)</span>}
+              <div className="flex flex-wrap gap-4 mt-2 text-xs text-neutral-500">
+                <span>— Efficient frontier</span>
+                <span>● Your portfolio</span>
+                {optimalPoint && <span>○ Max Sharpe (optimal)</span>}
               </div>
             </div>
           </>

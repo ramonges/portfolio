@@ -16,11 +16,25 @@ export interface SearchResult {
   matchScore: string
 }
 
-export async function searchSymbol(keywords: string): Promise<SearchResult[]> {
-  const data = await fetchApi({ function: 'SYMBOL_SEARCH', keywords }) as { bestMatches?: Array<Record<string, string>>; Note?: string }
-  if (data.Note) return []
+export interface SearchResponse {
+  results: SearchResult[]
+  error?: string
+}
+
+export async function searchSymbol(keywords: string): Promise<SearchResponse> {
+  const data = await fetchApi({ function: 'SYMBOL_SEARCH', keywords }) as {
+    bestMatches?: Array<Record<string, string>>
+    Note?: string
+    Information?: string
+  }
+  if (data.Note) {
+    return { results: [], error: 'Limite API atteinte. Réessayez dans 1 minute.' }
+  }
+  if (data.Information) {
+    return { results: [], error: data.Information }
+  }
   const matches = data.bestMatches || []
-  return matches.map((m: Record<string, string>) => ({
+  const results = matches.map((m: Record<string, string>) => ({
     symbol: m['1. symbol'],
     name: m['2. name'],
     type: m['3. type'],
@@ -28,6 +42,7 @@ export async function searchSymbol(keywords: string): Promise<SearchResult[]> {
     currency: m['8. currency'],
     matchScore: m['9. matchScore'],
   }))
+  return { results }
 }
 
 export interface TimeSeriesPoint {

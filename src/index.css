@@ -5,8 +5,8 @@
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
-  color: #e2e8f0;
-  background-color: #0f172a;
+  color: #fafafa;
+  background-color: #0a0a0a;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -19,7 +19,6 @@ html, body, #root {
   width: 100%;
 }
 
-/* Fallback so content is visible even if Tailwind fails */
 #root {
-  color: #e2e8f0;
+  color: #fafafa;
 }
