@@ -44,6 +44,7 @@ export function PortfolioPage() {
   const [frontierProximity, setFrontierProximity] = useState<number | null>(null)
   const [sp500DataReady, setSp500DataReady] = useState(false)
   const [stockPoints, setStockPoints] = useState<{ symbol: string; risk: number; return: number }[]>([])
+  const [sp500Error, setSp500Error] = useState<string | null>(null)
 
   useEffect(() => {
     loadAssets()
@@ -78,12 +79,15 @@ export function PortfolioPage() {
   }
 
   async function loadSp500FromSupabase(): Promise<Map<string, number[]>> {
+    setSp500Error(null)
     const { data, error } = await supabase
       .from('sp500_daily')
       .select('symbol, date, close')
       .order('date', { ascending: true })
     if (error) {
+      const msg = `${error.message} (${error.code || 'code'})`
       console.error('sp500_daily:', error)
+      setSp500Error(msg)
       return new Map()
     }
     const bySymbol = new Map<string, { date: string; close: number }[]>()
@@ -109,6 +113,7 @@ export function PortfolioPage() {
 
     const sp500Map = await loadSp500FromSupabase()
     if (sp500Map.size === 0) {
+      if (!sp500Error) setSp500Error('Aucun symbole avec ≥60 jours de données.')
       setFrontier([])
       setStockPoints([])
       setPortfolioPoint(null)
@@ -292,9 +297,16 @@ export function PortfolioPage() {
         {loading ? (
           <p className="text-neutral-500">Loading...</p>
         ) : !sp500DataReady && !frontierLoading ? (
-          <p className="text-neutral-500">
-            Pas de données S&P 500. Exécutez <code className="text-neutral-400">node scripts/populate-sp500.mjs</code> pour remplir la base.
-          </p>
+          <div className="text-neutral-500 space-y-2">
+            <p>Pas de données S&P 500.</p>
+            {sp500Error && (
+              <p className="text-amber-400/90 text-sm">Erreur : {sp500Error}</p>
+            )}
+            <p className="text-sm">
+              Exécutez <code className="text-neutral-400">node scripts/populate-sp500.mjs</code> pour remplir la base.
+              Vérifiez aussi <code className="text-neutral-400">VITE_SUPABASE_URL</code> et <code className="text-neutral-400">VITE_SUPABASE_ANON_KEY</code> dans .env.
+            </p>
+          </div>
         ) : (
           <>
             <div className="mb-6 rounded-lg bg-neutral-900/50 border border-neutral-800 p-4">
