@@ -80,17 +80,26 @@ export function PortfolioPage() {
 
   async function loadSp500FromSupabase(): Promise<Map<string, number[]>> {
     setSp500Error(null)
-    const { data, error } = await supabase
-      .from('sp500_daily')
-      .select('symbol, date, close')
-      .order('date', { ascending: true })
-    if (error) {
-      const msg = `${error.message} (${error.code || 'code'})`
-      console.error('sp500_daily:', error)
-      setSp500Error(msg)
-      return new Map()
+    const pageSize = 1000
+    let rows: { symbol: string; date: string; close: number }[] = []
+    let offset = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('sp500_daily')
+        .select('symbol, date, close')
+        .order('date', { ascending: true })
+        .range(offset, offset + pageSize - 1)
+      if (error) {
+        const msg = `${error.message} (${error.code || 'code'})`
+        console.error('sp500_daily:', error)
+        setSp500Error(msg)
+        return new Map()
+      }
+      const chunk = (data || []) as { symbol: string; date: string; close: number }[]
+      rows = rows.concat(chunk)
+      if (chunk.length < pageSize) break
+      offset += pageSize
     }
-    const rows = data || []
     if (rows.length === 0) {
       setSp500Error('Requête vide (0 lignes). Vérifiez la politique RLS sur sp500_daily.')
       return new Map()
