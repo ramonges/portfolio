@@ -13,10 +13,16 @@ import { supabase } from '../lib/supabase'
 import { getDailyTimeSeries } from '../lib/alphaVantage'
 import {
   computeEfficientFrontier,
-  maxSharpeWeights,
+  maxSharpeWeightsLongOnly,
   portfolioSharpe,
   type PortfolioPoint,
 } from '../lib/markowitz'
+
+/** Max symbols pour la frontière (500×500 covariance = lent). Prend les symboles avec le plus de données. */
+const MAX_FRONTIER_SYMBOLS = 120
+
+/** Écart-type annualisé : σ_ann = √252 × σ_daily (252 jours de bourse) */
+const ANNUALIZE_STD = Math.sqrt(252)
 
 interface PortfolioAsset {
   id: string
@@ -35,19 +41,13 @@ export function PortfolioPage() {
   const [portfolioSharpeRatio, setPortfolioSharpeRatio] = useState<number | null>(null)
   const [optimalPoint, setOptimalPoint] = useState<{ return: number; risk: number } | null>(null)
   const [frontierProximity, setFrontierProximity] = useState<number | null>(null)
+  const [sp500DataReady, setSp500DataReady] = useState(false)
 
   useEffect(() => {
     loadAssets()
   }, [])
 
   useEffect(() => {
-    if (assets.length === 0) {
-      setFrontier([])
-      setPortfolioPoint(null)
-      setPortfolioSharpeRatio(null)
-      setOptimalPoint(null)
-      return
-    }
     loadFrontierAndPortfolio()
   }, [assets])
 
@@ -75,95 +75,168 @@ export function PortfolioPage() {
     setLoading(false)
   }
 
+  async function loadSp500FromSupabase(): Promise<Map<string, number[]>> {
+    const { data, error } = await supabase
+      .from('sp500_daily')
+      .select('symbol, date, close')
+      .order('date', { ascending: true })
+    if (error) {
+      console.error('sp500_daily:', error)
+      return new Map()
+    }
+    const bySymbol = new Map<string, { date: string; close: number }[]>()
+    for (const row of data || []) {
+      const sym = String(row.symbol)
+      if (!bySymbol.has(sym)) bySymbol.set(sym, [])
+      bySymbol.get(sym)!.push({
+        date: row.date,
+        close: Number(row.close),
+      })
+    }
+    const result = new Map<string, number[]>()
+    for (const [sym, rows] of bySymbol) {
+      const closes = rows.sort((a, b) => a.date.localeCompare(b.date)).map((r) => r.close)
+      if (closes.length >= 60) result.set(sym, closes)
+    }
+    return result
+  }
+
   async function loadFrontierAndPortfolio() {
     setFrontierLoading(true)
-    const seriesList: { symbol: string; closes: number[] }[] = []
-    for (const a of assets) {
-      try {
-        const res = await getDailyTimeSeries(a.symbol)
-        if (res?.series?.length) {
-          seriesList.push({
-            symbol: a.symbol,
-            closes: res.series.map((p) => p.close),
-          })
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
+    setSp500DataReady(false)
 
-    if (seriesList.length === 0) {
+    const sp500Map = await loadSp500FromSupabase()
+    if (sp500Map.size === 0) {
       setFrontier([])
       setPortfolioPoint(null)
       setPortfolioSharpeRatio(null)
       setOptimalPoint(null)
+      setFrontierProximity(null)
       setFrontierLoading(false)
       return
     }
-    const minLen = Math.min(...seriesList.map((s) => s.closes.length))
-    const returns = seriesList.map((s) => {
-      const c = s.closes.slice(-minLen)
+    setSp500DataReady(true)
+
+    const symbols = Array.from(sp500Map.keys())
+    const allCloses = symbols.map((s) => sp500Map.get(s)!)
+    const minLen = Math.min(...allCloses.map((c) => c.length))
+    const commonCloses = allCloses.map((c) => c.slice(-minLen))
+
+    const byLen = symbols
+      .map((s, i) => ({ sym: s, len: commonCloses[i].length }))
+      .sort((a, b) => b.len - a.len)
+    const selectedSymbols = byLen.slice(0, MAX_FRONTIER_SYMBOLS).map((x) => x.sym)
+    const selectedIdx = selectedSymbols.map((s) => symbols.indexOf(s))
+    const frontierCloses = selectedIdx.map((i) => commonCloses[i])
+
+    const frontierReturns = frontierCloses.map((c) => {
       const rets: number[] = []
       for (let i = 1; i < c.length; i++) rets.push((c[i] - c[i - 1]) / c[i - 1])
       return rets
     })
 
-    const meanRetsAnn = returns.map((r) => (r.reduce((a, b) => a + b, 0) / r.length) * 252)
-    const covDaily = buildCovMatrix(returns)
+    const meanRetsDaily = frontierReturns.map(
+      (r) => r.reduce((a, b) => a + b, 0) / r.length
+    )
+    const meanRetsAnn = meanRetsDaily.map((m) => m * 252)
+    const covDaily = buildCovMatrix(frontierReturns)
     const covAnn = covDaily.map((row) => row.map((v) => v * 252))
 
-    const weights = assets.slice(0, seriesList.length).map((a) => (a.weight ?? 1) / seriesList.length)
-    const sumW = weights.reduce((a, b) => a + b, 0)
-    const normWeights = sumW > 0 ? weights.map((w) => w / sumW) : weights
-
-    const portRet = meanRetsAnn.reduce((s, m, j) => s + m * normWeights[j], 0)
-    const portVar = normWeights.reduce(
-      (s, wi, i) =>
-        s + normWeights.reduce((s2, wj, j) => s2 + wi * wj * covAnn[i][j], 0),
-      0
-    )
-    setPortfolioPoint({
-      return: portRet * 100,
-      risk: Math.sqrt(Math.max(0, portVar)) * 100,
-    })
-    setPortfolioSharpeRatio(
-      portfolioSharpe(normWeights, meanRetsAnn, covAnn)
+    const frontierPts = computeEfficientFrontier(frontierReturns, 50)
+    setFrontier(
+      frontierPts.map((p) => ({
+        ...p,
+        return: p.return * 252 * 100,
+        risk: p.risk * ANNUALIZE_STD * 100,
+      }))
     )
 
-    if (seriesList.length === 1) {
-      setFrontier([{ return: portRet * 100, risk: Math.sqrt(Math.max(0, portVar)) * 100 }])
-      setOptimalPoint(null)
-      setFrontierProximity(100)
-    } else {
-      const frontierPts = computeEfficientFrontier(returns, 50)
-      const annRet = 252
-      const annRisk = Math.sqrt(252)
-      setFrontier(
-        frontierPts.map((p) => ({
-          ...p,
-          return: p.return * annRet * 100,
-          risk: p.risk * annRisk * 100,
-        }))
+    const optW = maxSharpeWeightsLongOnly(meanRetsAnn, covAnn)
+    if (optW) {
+      const optRet = meanRetsAnn.reduce((s, m, j) => s + m * optW[j], 0)
+      const optVar = optW.reduce(
+        (s, wi, i) => s + optW.reduce((s2, wj, j) => s2 + wi * wj * covAnn[i][j], 0),
+        0
       )
-      const optW = maxSharpeWeights(meanRetsAnn, covAnn)
-      if (optW) {
-        const optRet = meanRetsAnn.reduce((s, m, j) => s + m * optW[j], 0)
-        const optVar = optW.reduce(
-          (s, wi, i) => s + optW.reduce((s2, wj, j) => s2 + wi * wj * covAnn[i][j], 0),
+      setOptimalPoint({
+        return: optRet * 100,
+        risk: Math.sqrt(Math.max(0, optVar)) * 100,
+      })
+    } else {
+      setOptimalPoint(null)
+    }
+
+    if (assets.length === 0) {
+      setPortfolioPoint(null)
+      setPortfolioSharpeRatio(null)
+      setFrontierProximity(null)
+    } else {
+      const userSeriesList: { symbol: string; closes: number[] }[] = []
+      for (const a of assets) {
+        const fromSp500 = sp500Map.get(a.symbol)
+        if (fromSp500?.length) {
+          userSeriesList.push({ symbol: a.symbol, closes: fromSp500 })
+        } else {
+          try {
+            const res = await getDailyTimeSeries(a.symbol)
+            if (res?.series?.length) {
+              userSeriesList.push({
+                symbol: a.symbol,
+                closes: res.series.map((p) => p.close),
+              })
+            }
+          } catch (e) {
+            console.error(e)
+          }
+        }
+      }
+
+      if (userSeriesList.length === 0) {
+        setPortfolioPoint(null)
+        setPortfolioSharpeRatio(null)
+        setFrontierProximity(null)
+      } else {
+        const userMinLen = Math.min(...userSeriesList.map((s) => s.closes.length))
+        const userReturns = userSeriesList.map((s) => {
+          const c = s.closes.slice(-userMinLen)
+          const rets: number[] = []
+          for (let i = 1; i < c.length; i++) rets.push((c[i] - c[i - 1]) / c[i - 1])
+          return rets
+        })
+
+        const userMeanAnn = userReturns.map(
+          (r) => (r.reduce((a, b) => a + b, 0) / r.length) * 252
+        )
+        const userCovDaily = buildCovMatrix(userReturns)
+        const userCovAnn = userCovDaily.map((row) => row.map((v) => v * 252))
+
+        const weights = assets
+          .slice(0, userSeriesList.length)
+          .map((a) => (a.weight ?? 1) / userSeriesList.length)
+        const sumW = weights.reduce((a, b) => a + b, 0)
+        const normWeights = sumW > 0 ? weights.map((w) => w / sumW) : weights
+
+        const portRet = userMeanAnn.reduce((s, m, j) => s + m * normWeights[j], 0)
+        const portVar = normWeights.reduce(
+          (s, wi, i) =>
+            s + normWeights.reduce((s2, wj, j) => s2 + wi * wj * userCovAnn[i][j], 0),
           0
         )
-        setOptimalPoint({
-          return: optRet * 100,
-          risk: Math.sqrt(Math.max(0, optVar)) * 100,
+        setPortfolioPoint({
+          return: portRet * 100,
+          risk: Math.sqrt(Math.max(0, portVar)) * 100,
         })
-        const optSharpe = portfolioSharpe(optW, meanRetsAnn, covAnn)
-        const userSharpe = portfolioSharpe(normWeights, meanRetsAnn, covAnn)
-        setFrontierProximity(
-          optSharpe > 0 ? Math.min(100, Math.round((userSharpe / optSharpe) * 100)) : null
-        )
-      } else {
-        setOptimalPoint(null)
-        setFrontierProximity(null)
+        setPortfolioSharpeRatio(portfolioSharpe(normWeights, userMeanAnn, userCovAnn))
+
+        if (optW) {
+          const optSharpe = portfolioSharpe(optW, meanRetsAnn, covAnn)
+          const userSharpe = portfolioSharpe(normWeights, userMeanAnn, userCovAnn)
+          setFrontierProximity(
+            optSharpe > 0 ? Math.min(100, Math.round((userSharpe / optSharpe) * 100)) : null
+          )
+        } else {
+          setFrontierProximity(null)
+        }
       }
     }
     setFrontierLoading(false)
@@ -197,9 +270,9 @@ export function PortfolioPage() {
 
         {loading ? (
           <p className="text-neutral-500">Loading...</p>
-        ) : assets.length === 0 ? (
+        ) : !sp500DataReady && !frontierLoading ? (
           <p className="text-neutral-500">
-            No assets. Add stocks/ETFs from the Search & Add dashboard.
+            Pas de données S&P 500. Exécutez <code className="text-neutral-400">node scripts/populate-sp500.mjs</code> pour remplir la base.
           </p>
         ) : (
           <>
@@ -269,7 +342,7 @@ export function PortfolioPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#404040" />
                     <XAxis
                       dataKey="risk"
-                      name="Risk %"
+                      name="Risk (Std. dev. ann.)"
                       stroke="#737373"
                       tick={{ fill: '#737373' }}
                       unit="%"

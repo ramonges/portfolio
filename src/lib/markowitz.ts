@@ -1,6 +1,8 @@
 /**
  * Markowitz / Efficient Frontier calculations
  * Mean-variance optimization: efficient frontier = min variance for each target return
+ *
+ * Risk = sqrt(variance). Pour annualiser: σ_ann = √252 × σ_daily (252 jours de bourse).
  */
 
 export interface PortfolioPoint {
