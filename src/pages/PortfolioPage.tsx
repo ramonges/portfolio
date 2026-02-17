@@ -398,6 +398,7 @@ export function PortfolioPage() {
                       stroke="#737373"
                       tick={{ fill: '#737373' }}
                       unit="%"
+                      tickFormatter={(v) => (typeof v === 'number' ? Math.round(v).toString() : String(v))}
                     />
                     <YAxis
                       dataKey="return"
