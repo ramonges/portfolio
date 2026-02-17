@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   ComposedChart,
   Line,
+  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -42,6 +43,7 @@ export function PortfolioPage() {
   const [optimalPoint, setOptimalPoint] = useState<{ return: number; risk: number } | null>(null)
   const [frontierProximity, setFrontierProximity] = useState<number | null>(null)
   const [sp500DataReady, setSp500DataReady] = useState(false)
+  const [stockPoints, setStockPoints] = useState<{ symbol: string; risk: number; return: number }[]>([])
 
   useEffect(() => {
     loadAssets()
@@ -108,6 +110,7 @@ export function PortfolioPage() {
     const sp500Map = await loadSp500FromSupabase()
     if (sp500Map.size === 0) {
       setFrontier([])
+      setStockPoints([])
       setPortfolioPoint(null)
       setPortfolioSharpeRatio(null)
       setOptimalPoint(null)
@@ -141,6 +144,24 @@ export function PortfolioPage() {
     const meanRetsAnn = meanRetsDaily.map((m) => m * 252)
     const covDaily = buildCovMatrix(frontierReturns)
     const covAnn = covDaily.map((row) => row.map((v) => v * 252))
+
+    const allReturns = commonCloses.map((c) => {
+      const rets: number[] = []
+      for (let i = 1; i < c.length; i++) rets.push((c[i] - c[i - 1]) / c[i - 1])
+      return rets
+    })
+    const points = symbols.map((sym, i) => {
+      const r = allReturns[i]
+      const T = r.length
+      const mean = r.reduce((a, b) => a + b, 0) / T
+      const variance = T > 1 ? r.reduce((s, x) => s + (x - mean) ** 2, 0) / (T - 1) : 0
+      return {
+        symbol: sym,
+        risk: Math.sqrt(Math.max(0, variance)) * ANNUALIZE_STD * 100,
+        return: mean * 252 * 100,
+      }
+    })
+    setStockPoints(points)
 
     const frontierPts = computeEfficientFrontier(frontierReturns, 50)
     setFrontier(
@@ -357,6 +378,25 @@ export function PortfolioPage() {
                     <Tooltip
                       contentStyle={{ backgroundColor: '#171717', border: '1px solid #404040' }}
                       formatter={(value: number | undefined) => (value != null ? value.toFixed(2) : '—')}
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null
+                        const p = payload[0]?.payload
+                        const sym = p?.symbol
+                        return (
+                          <div className="rounded bg-neutral-800 px-3 py-2 text-sm">
+                            {sym && <div className="font-medium text-white">{sym}</div>}
+                            <div>Risk: {(p?.risk ?? 0).toFixed(2)}%</div>
+                            <div>Return: {(p?.return ?? 0).toFixed(2)}%</div>
+                          </div>
+                        )
+                      }}
+                    />
+                    <Scatter
+                      data={stockPoints}
+                      dataKey="return"
+                      fill="#525252"
+                      fillOpacity={0.6}
+                      name="Stocks"
                     />
                     <Line
                       type="monotone"
@@ -393,6 +433,7 @@ export function PortfolioPage() {
               </div>
               )}
               <div className="flex flex-wrap gap-4 mt-2 text-xs text-neutral-500">
+                <span>● Stocks (σ, return)</span>
                 <span>— Efficient frontier</span>
                 <span>● Your portfolio</span>
                 {optimalPoint && <span>○ Max Sharpe (optimal)</span>}
