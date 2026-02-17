@@ -90,9 +90,15 @@ export function PortfolioPage() {
       setSp500Error(msg)
       return new Map()
     }
+    const rows = data || []
+    if (rows.length === 0) {
+      setSp500Error('Requête vide (0 lignes). Vérifiez la politique RLS sur sp500_daily.')
+      return new Map()
+    }
     const bySymbol = new Map<string, { date: string; close: number }[]>()
-    for (const row of data || []) {
+    for (const row of rows) {
       const sym = String(row.symbol)
+      if (!sym) continue
       if (!bySymbol.has(sym)) bySymbol.set(sym, [])
       bySymbol.get(sym)!.push({
         date: row.date,
@@ -100,9 +106,13 @@ export function PortfolioPage() {
       })
     }
     const result = new Map<string, number[]>()
-    for (const [sym, rows] of bySymbol) {
-      const closes = rows.sort((a, b) => a.date.localeCompare(b.date)).map((r) => r.close)
+    for (const [sym, symbolRows] of bySymbol) {
+      const closes = symbolRows.sort((a, b) => a.date.localeCompare(b.date)).map((r) => r.close)
       if (closes.length >= 60) result.set(sym, closes)
+    }
+    if (result.size === 0) {
+      const maxDays = Math.max(...Array.from(bySymbol.values()).map((r) => r.length), 0)
+      setSp500Error(`Aucun symbole avec ≥60 jours. Max par symbole: ${maxDays} jours.`)
     }
     return result
   }
