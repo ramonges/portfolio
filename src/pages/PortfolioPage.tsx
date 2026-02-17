@@ -393,12 +393,14 @@ export function PortfolioPage() {
                   <ComposedChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#404040" />
                     <XAxis
+                      type="number"
                       dataKey="risk"
                       name="Risk (Std. dev. ann.)"
                       stroke="#737373"
                       tick={{ fill: '#737373' }}
                       unit="%"
                       domain={[0, 100]}
+                      ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
                       tickFormatter={(v) => (typeof v === 'number' ? Math.round(v).toString() : String(v))}
                     />
                     <YAxis
